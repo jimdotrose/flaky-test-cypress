@@ -1,31 +1,277 @@
-# Use the latest 2.1 version of CircleCI pipeline process engine.
-# See: https://circleci.com/docs/reference/configuration-reference
+# CircleCI configuration for flaky-test-cypress project
 version: 2.1
 
-# Define a job to be invoked later in a workflow.
-# See: https://circleci.com/docs/guides/orchestrate/jobs-steps/#jobs-overview & https://circleci.com/docs/reference/configuration-reference/#jobs
-jobs:
-  say-hello:
-    # Specify the execution environment. You can specify an image from Docker Hub or use one of our convenience images from CircleCI's Developer Hub.
-    # See: https://circleci.com/docs/guides/execution-managed/executor-intro/ & https://circleci.com/docs/reference/configuration-reference/#executor-job
+# Orbs for common tasks
+orbs:
+  node: circleci/node@5.1.0
+  cypress: cypress-io/cypress@3.3.1
+
+# Define reusable executors
+executors:
+  node-executor:
     docker:
-      # Specify the version you desire here
-      # See: https://circleci.com/developer/images/image/cimg/base
-      - image: cimg/base:current
+      - image: cimg/node:18.17-browsers
+    resource_class: medium
+    working_directory: ~/repo
 
-    # Add steps to the job
-    # See: https://circleci.com/docs/guides/orchestrate/jobs-steps/#steps-overview & https://circleci.com/docs/reference/configuration-reference/#steps
+# Define reusable commands
+commands:
+  setup-project:
+    description: "Checkout code and restore cache"
     steps:
-      # Checkout the code as the first step.
       - checkout
-      - run:
-          name: "Say hello"
-          command: "echo Hello, World!"
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "package-lock.json" }}
+            - v1-dependencies-
 
-# Orchestrate jobs using workflows
-# See: https://circleci.com/docs/guides/orchestrate/workflows/ & https://circleci.com/docs/reference/configuration-reference/#workflows
+  save-project-cache:
+    description: "Save project dependencies cache"
+    steps:
+      - save_cache:
+          paths:
+            - ~/.npm
+            - ~/.cache/Cypress
+          key: v1-dependencies-{{ checksum "package-lock.json" }}
+
+# Define jobs
+jobs:
+  # Job to run tests on the main branch
+  test-main:
+    executor: node-executor
+    steps:
+      - setup-project
+      - run:
+          name: Install dependencies
+          command: npm ci
+      - save-project-cache
+      - run:
+          name: Start application
+          command: npm start
+          background: true
+      - run:
+          name: Wait for application
+          command: npx wait-on http://localhost:3000
+      - run:
+          name: Run Cypress tests
+          command: npm test
+      - store_test_results:
+          path: cypress/results
+      - store_artifacts:
+          path: cypress/screenshots
+      - store_artifacts:
+          path: cypress/videos
+
+  # Job to run tests on specific level branches
+  test-level:
+    executor: node-executor
+    parameters:
+      level:
+        type: string
+        description: "The level branch to test (e.g., level1, level2, etc.)"
+    steps:
+      - setup-project
+      - run:
+          name: Checkout level branch
+          command: git checkout << parameters.level >>
+      - run:
+          name: Install dependencies
+          command: npm ci
+      - save-project-cache
+      - run:
+          name: Start application
+          command: npm start
+          background: true
+      - run:
+          name: Wait for application
+          command: npx wait-on http://localhost:3000
+      - run:
+          name: Run Cypress tests multiple times to detect flakiness
+          command: |
+            echo "Running tests 5 times to detect flaky behavior..."
+            for i in {1..5}; do
+              echo "Run $i of 5"
+              npm test -- --record false || echo "Test run $i failed"
+            done
+      - store_test_results:
+          path: cypress/results
+      - store_artifacts:
+          path: cypress/screenshots
+      - store_artifacts:
+          path: cypress/videos
+
+  # Job using Cypress orb for more advanced features
+  cypress-run:
+    executor: cypress/default
+    steps:
+      - checkout
+      - cypress/install
+      - run:
+          name: Start application
+          command: npm start
+          background: true
+      - run:
+          name: Wait for application
+          command: npx wait-on http://localhost:3000
+      - cypress/run-tests:
+          cypress-command: npx cypress run
+          start-command: ''  # Empty because we already started the app
+      - store_artifacts:
+          path: cypress/screenshots
+      - store_artifacts:
+          path: cypress/videos
+      
+  # Job for running tests with recording (requires Cypress Dashboard)
+  cypress-record:
+    executor: cypress/default
+    steps:
+      - checkout
+      - cypress/install
+      - run:
+          name: Start application
+          command: npm start
+          background: true
+      - run:
+          name: Wait for application
+          command: npx wait-on http://localhost:3000
+      - cypress/run-tests:
+          cypress-command: npx cypress run --record --parallel --group "parallel tests" --ci-build-id $CIRCLE_SHA1-$CIRCLE_BUILD_NUM
+          start-command: ''  # Empty because we already started the app
+      - store_artifacts:
+          path: cypress/screenshots
+      - store_artifacts:
+          path: cypress/videos
+
+  # Alternative job without using Cypress orb
+  cypress-simple:
+    executor: node-executor
+    steps:
+      - setup-project
+      - run:
+          name: Install dependencies including Cypress
+          command: npm ci
+      - save-project-cache
+      - run:
+          name: Verify Cypress
+          command: npx cypress verify
+      - run:
+          name: Start application
+          command: npm start
+          background: true
+      - run:
+          name: Wait for application
+          command: npx wait-on http://localhost:3000
+      - run:
+          name: Run Cypress tests
+          command: npx cypress run
+      - store_test_results:
+          path: cypress/results
+      - store_artifacts:
+          path: cypress/screenshots
+      - store_artifacts:
+          path: cypress/videos
+
+# Define workflows
 workflows:
-  say-hello-workflow: # This is the name of the workflow, feel free to change it to better match your workflow.
-    # Inside the workflow, you define the jobs you want to run.
+  version: 2
+  
+  # Default workflow for all branches
+  build-and-test:
     jobs:
-      - say-hello
+      - test-main:
+          name: "Test Default"
+      
+      - cypress-simple:
+          name: "Cypress Tests"
+
+  # Workflow to test specific level branches
+  test-level-branches:
+    jobs:
+      - test-level:
+          name: "Test Level 1"
+          level: "level1"
+          filters:
+            branches:
+              only: level1
+      
+      - test-level:
+          name: "Test Level 2"
+          level: "level2"
+          filters:
+            branches:
+              only: level2
+              
+      - test-level:
+          name: "Test Level 3"
+          level: "level3"
+          filters:
+            branches:
+              only: level3
+              
+      - test-level:
+          name: "Test Level 4"
+          level: "level4"
+          filters:
+            branches:
+              only: level4
+              
+      - test-level:
+          name: "Test Level 5"
+          level: "level5"
+          filters:
+            branches:
+              only: level5
+              
+      - test-level:
+          name: "Test Level 6"
+          level: "level6"
+          filters:
+            branches:
+              only: level6
+              
+      - test-level:
+          name: "Test Level 7"
+          level: "level7"
+          filters:
+            branches:
+              only: level7
+              
+      - test-level:
+          name: "Test Level 8"
+          level: "level8"
+          filters:
+            branches:
+              only: level8
+              
+      - test-level:
+          name: "Test Level 9"
+          level: "level9"
+          filters:
+            branches:
+              only: level9
+
+  # Nightly workflow to test for flakiness
+  nightly-flake-detection:
+    triggers:
+      - schedule:
+          cron: "0 0 * * *"
+          filters:
+            branches:
+              only:
+                - main
+    jobs:
+      - test-main:
+          name: "Nightly Main Branch Test"
+      
+      - cypress-simple:
+          name: "Nightly Cypress Tests"
+
+  # Workflow with Cypress Dashboard recording (requires setup)
+  recorded-tests:
+    jobs:
+      - cypress-record:
+          name: "Recorded Cypress Tests"
+          context: cypress-dashboard
+          filters:
+            branches:
+              only: main
