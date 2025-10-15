@@ -10,7 +10,7 @@ orbs:
 executors:
   node-executor:
     docker:
-      - image: cimg/node:18.17-browsers
+      - image: cimg/node:20.19-browsers
     resource_class: medium
     working_directory: ~/repo
 
@@ -43,7 +43,7 @@ jobs:
       - setup-project
       - run:
           name: Install dependencies
-          command: npm ci
+          command: npm ci --force
       - save-project-cache
       - run:
           name: Start application
@@ -102,7 +102,8 @@ jobs:
 
   # Job using Cypress orb for more advanced features
   cypress-run:
-    executor: cypress/default
+    docker:
+      - image: cypress/browsers:node-20.18.0-chrome-130.0.6723.58-1-ff-131.0.3-edge-130.0.2849.52-1
     steps:
       - checkout
       - cypress/install
@@ -123,7 +124,8 @@ jobs:
       
   # Job for running tests with recording (requires Cypress Dashboard)
   cypress-record:
-    executor: cypress/default
+    docker:
+      - image: cypress/browsers:node-20.18.0-chrome-130.0.6723.58-1-ff-131.0.3-edge-130.0.2849.52-1
     steps:
       - checkout
       - cypress/install
@@ -149,7 +151,7 @@ jobs:
       - setup-project
       - run:
           name: Install dependencies including Cypress
-          command: npm ci
+          command: npm ci --force
       - save-project-cache
       - run:
           name: Verify Cypress
