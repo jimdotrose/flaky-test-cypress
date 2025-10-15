@@ -54,13 +54,17 @@ jobs:
           command: npx wait-on http://localhost:3000
       - run:
           name: Run Cypress tests
-          command: npm test
+          command: |
+            npm test -- --reporter junit --reporter-options "mochaFile=test-results/junit/results-[hash].xml"
+          when: always
       - store_test_results:
-          path: cypress/results
+          path: test-results
       - store_artifacts:
           path: cypress/screenshots
       - store_artifacts:
           path: cypress/videos
+      - store_artifacts:
+          path: test-results
 
   # Job to run tests on specific level branches
   test-level:
@@ -88,17 +92,21 @@ jobs:
       - run:
           name: Run Cypress tests multiple times to detect flakiness
           command: |
+            mkdir -p test-results/junit
             echo "Running tests 5 times to detect flaky behavior..."
             for i in {1..5}; do
               echo "Run $i of 5"
-              npm test -- --record false || echo "Test run $i failed"
+              npm test -- --reporter junit --reporter-options "mochaFile=test-results/junit/results-run${i}-[hash].xml" || echo "Test run $i failed"
             done
+          when: always
       - store_test_results:
-          path: cypress/results
+          path: test-results
       - store_artifacts:
           path: cypress/screenshots
       - store_artifacts:
           path: cypress/videos
+      - store_artifacts:
+          path: test-results
 
   # Job using Cypress orb for more advanced features
   cypress-run:
@@ -115,12 +123,16 @@ jobs:
           name: Wait for application
           command: npx wait-on http://localhost:3000
       - cypress/run-tests:
-          cypress-command: npx cypress run
+          cypress-command: npx cypress run --reporter junit --reporter-options "mochaFile=test-results/junit/results-[hash].xml"
           start-command: ''  # Empty because we already started the app
+      - store_test_results:
+          path: test-results
       - store_artifacts:
           path: cypress/screenshots
       - store_artifacts:
           path: cypress/videos
+      - store_artifacts:
+          path: test-results
       
   # Job for running tests with recording (requires Cypress Dashboard)
   cypress-record:
@@ -137,12 +149,16 @@ jobs:
           name: Wait for application
           command: npx wait-on http://localhost:3000
       - cypress/run-tests:
-          cypress-command: npx cypress run --record --parallel --group "parallel tests" --ci-build-id $CIRCLE_SHA1-$CIRCLE_BUILD_NUM
+          cypress-command: npx cypress run --record --parallel --group "parallel tests" --ci-build-id $CIRCLE_SHA1-$CIRCLE_BUILD_NUM --reporter junit --reporter-options "mochaFile=test-results/junit/results-[hash].xml"
           start-command: ''  # Empty because we already started the app
+      - store_test_results:
+          path: test-results
       - store_artifacts:
           path: cypress/screenshots
       - store_artifacts:
           path: cypress/videos
+      - store_artifacts:
+          path: test-results
 
   # Alternative job without using Cypress orb
   cypress-simple:
@@ -165,13 +181,21 @@ jobs:
           command: npx wait-on http://localhost:3000
       - run:
           name: Run Cypress tests
-          command: npx cypress run
+          command: |
+            mkdir -p test-results/junit
+            npx cypress run --reporter junit --reporter-options "mochaFile=test-results/junit/results-[hash].xml"
+          when: always
       - store_test_results:
-          path: cypress/results
+          path: test-results
       - store_artifacts:
           path: cypress/screenshots
+          when: always
       - store_artifacts:
           path: cypress/videos
+          when: always
+      - store_artifacts:
+          path: test-results
+          when: always
 
 # Define workflows
 workflows:
