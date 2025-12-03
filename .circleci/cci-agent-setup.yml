@@ -12,8 +12,51 @@ jobs:
       - checkout
 
       - run:
+          name: Setup shell profile for nvm
+          command: |
+            # Create .bashrc if it doesn't exist
+            touch ~/.bashrc
+            echo "✅ Created ~/.bashrc for nvm installation"
+
+      - run:
+          name: Initialize nvm and install Node.js
+          command: |
+            # If nvm was already installed (even with exit code 3), manually source it
+            if [ -d "$HOME/.nvm" ]; then
+              export NVM_DIR="$HOME/.nvm"
+              [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+              # Add nvm to .bashrc for future commands
+              if ! grep -q 'NVM_DIR' ~/.bashrc; then
+                echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc
+                echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm' >> ~/.bashrc
+                echo "✅ Added nvm initialization to ~/.bashrc"
+              fi
+
+              # Verify nvm is working
+              nvm --version && echo "✅ nvm is installed: $(nvm --version)"
+
+              # Install Node.js if not already installed
+              if ! command -v node &> /dev/null; then
+                echo "📦 Installing Node.js v22.15.1..."
+                nvm install 22.15.1
+                nvm use 22.15.1
+                nvm alias default 22.15.1
+                echo "✅ Node.js installed: $(node --version)"
+              else
+                echo "✅ Node.js already installed: $(node --version)"
+              fi
+            else
+              echo "⚠️  nvm directory not found, will need to install nvm manually"
+            fi
+
+      - run:
           name: Hello World
           command: |
+            # Source nvm if available
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
             echo "Hello, World!"
             echo "Job name: cci-agent-setup"
             echo "Current directory: $(pwd)"
@@ -21,3 +64,11 @@ jobs:
             echo "Operating System: $(uname -a)"
             echo "Available memory: $(free -h)"
             echo "CPU info: $(nproc) cores"
+
+            # Verify Node.js is available
+            if command -v node &> /dev/null; then
+              echo "Node.js version: $(node --version)"
+              echo "npm version: $(npm --version)"
+            else
+              echo "⚠️  Node.js not available"
+            fi
